@@ -13,7 +13,7 @@ public class FXController : MonoBehaviour
     public void OnUnitDeath(UnitAircraft unit, string killer)
     {
         Debug.Log(unit.callsign + " killed by: " + killer);
-        Destroy(Instantiate(deathExplosionPrefab, unit.hexPos.getPosition(), Quaternion.identity), deathExplosionPrefab.GetComponent<ParticleSystem>().main.duration + 1.0f);
+        Destroy(Instantiate(deathExplosionPrefab, unit.hexPos.getPosition(), Quaternion.identity), deathExplosionPrefab.GetComponent<ParticleSystem>().main.duration + 0.1f);
         //unit.GetComponent<Renderer>().material = dead;
     }
 

@@ -5,9 +5,11 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+//See bottom of this file for the file format.
 [System.Serializable]
 class PolicyIO
 {
+    //Writes policy to file.
     public static void Serialize(List<Tuple<QLearning.CommandListAbstract, float>>[] input, string filePath)
     {
         using(var writer = new StreamWriter(filePath))
@@ -17,21 +19,23 @@ class PolicyIO
                 writer.WriteLine(input[i].Count);
                 for (int j=0; j<input[i].Count; j++)
                 {
-                    Maneuver.ID maneuver = input[i][j].Item1[0];//Some c# garbage where this refuses to work like a c++ map with operator[].
+                    Maneuver.ID maneuver = input[i][j].Item1[0];
+                    int maneuverAsInt = (int)maneuver;
                     float score = input[i][j].Item2;
-                    writer.WriteLine(maneuver.ToString() + "," + score.ToString());
+                    writer.WriteLine(maneuverAsInt.ToString() + "," + score.ToString());
                 }
             }
         }
 
-        AssetDatabase.ImportAsset("Assets/Resources/policy.csv");
+        //AssetDatabase.ImportAsset("Assets/Resources/policy.csv");
     }
 
+    //Reads policy from file.
     public static void Deserialize(List<Tuple<QLearning.CommandListAbstract, float>>[] output, string filePath)
     {
-        if (output.Length != 0)
+        if (output != null)
         {
-            throw new Exception("You're gay. This array shouldn't be initialized unless you can justify being edgy.");
+            throw new Exception("This array shouldn't be initialized");
         }
 
         using(var reader = new StreamReader(filePath))

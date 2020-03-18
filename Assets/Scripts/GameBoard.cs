@@ -69,4 +69,10 @@ public class GameBoard : MonoBehaviour
             return false;
         }
     }
+
+    public HexPosition RandomPosition()
+    {
+        int idx = Random.Range(0, traversiblePositions.Count);
+        return traversiblePositions[idx];
+    }
 }

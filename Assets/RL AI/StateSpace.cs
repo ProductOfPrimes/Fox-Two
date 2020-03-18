@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-
+//A POD datatype to store only the necessary data from a UnitAircraft to build a functioning reinforcement agent.
 public struct AircraftState
 {
     public AircraftState(UnitAircraft aircraft)
@@ -37,6 +37,7 @@ class StateSpace
     public const int BOARD_SIZE_V = 6;
     public const int DIMENSIONS_PER_AIRCRAFT = 6;
     public const int FIXED_PLANE_STATE_SPACE_SIZE = 0;
+    //All states are multiplied to compute state size despite properties being independent because changing one property produces a completely unique state. 
     public const int PLANE_STATE_SPACE_SIZE = FIXED_PLANE_STATE_SPACE_SIZE + BOARD_SIZE_U * BOARD_SIZE_V * (SPEED_MAX + 1) * Heading.NUM_DIRECTIONS * (UnitAircraft.ALTITUDE_MAX + 1) * (HITPOINTS_MAX + 1);
 
     /// <summary>
@@ -49,20 +50,24 @@ class StateSpace
     /// </summary>
     public List<AircraftState> states;
 
+    public string ToString(AircraftState state)
+    {
+        return "Position: " + state.u + "," + state.v + "\t  Speed: " + state.speed + "\t  Heading: " + state.heading + "\t  Altitude: " + state.altitude + "\t  HP:" + state.hp;
+    }
+
     public int GetStateIndex(UnitAircraft aircraft)
     { 
-        int index;
-        //int[] stateArray = AircraftToArray(aircraft);
         AircraftState state = new AircraftState(aircraft);
 
-        return aircraftToStateSpaceIndex[state];
-        //if (aircraftToStateSpaceIndex.TryGetValue(stateArray, out index)) 
-        //{
-        //    return index;
-        //} else
-        //{
-        //    throw new System.Exception("Tried to find an aircraft state not in the state space!");
-        //}
+        int idx;
+
+        if(aircraftToStateSpaceIndex.TryGetValue(state, out idx))
+        {
+            return idx;
+        } else
+        {
+            throw new System.Exception("StateSpace couldn't find: " + ToString(state));
+        }
     }
 
     public UnitAircraft GetAircraftAtState(int index)
@@ -88,6 +93,7 @@ class StateSpace
         return unit;
     }
 
+    //Forms the statespace by appending every possible state to the states list.
    public StateSpace(UnitAircraft unit, int boardSize_u, int boardSize_v)
     {
         states = new List<AircraftState>();

@@ -9,6 +9,10 @@ using System.Threading;
 public class QLearning : MonoBehaviour
 {
     [SerializeField]
+    GameObject successParticles;
+
+    //"Players". Each commander is capable of controlling multiple jets, however jets are restricted to 1 for simplicity of this prototype.
+    [SerializeField]
     Commander[] commandersToControl;
     [SerializeField]
     GamePhaseController gameController;
@@ -23,8 +27,10 @@ public class QLearning : MonoBehaviour
     [SerializeField]
     GameBoard board;
 
+    //An array of lists where the array indices denote a state and the lists contain all possible scored actions for each state.
+    //Currently this datastructure functions as List<Dictionary<Maneuver, float>>[] due to single jet restrictions.
     [SerializeField]
-    List<Tuple<CommandListAbstract, float>>[] policy; // Array of lists of action-value pairs possible at each state. These tuples are {Action, Value estimate}
+    List<Tuple<CommandListAbstract, float>>[] policy;
 
     /// <summary>
     /// Function pointer for how reward should being calculated
@@ -97,6 +103,9 @@ public class QLearning : MonoBehaviour
     [SerializeField]
     bool isTraining = false;
 
+    [SerializeField]
+    bool sendCommands = true;
+
     /// <summary>
     /// How many episodes to train
     /// </summary>
@@ -106,6 +115,7 @@ public class QLearning : MonoBehaviour
     /// <summary>
     /// How many episodes have been run since starting
     /// </summary>
+    [SerializeField]
     private int episodeCount = 0;
 
     /// <summary>
@@ -114,14 +124,11 @@ public class QLearning : MonoBehaviour
     [SerializeField]
     int maximumRoundsPerEpisode = 10;
 
-
     private Thread thread1;
-    private Thread thread2;
 
     // Start is called before the first frame update
     void Start()
     {
-        //LoadPolicy("wew");
         rewardFunc = TestRewardFunction;
         InitStateSpace();
         gameController.onGameStart += OnGameStart;
@@ -130,18 +137,34 @@ public class QLearning : MonoBehaviour
         gameController.onGameOver += OnGameEnd;
     }
 
+    //The function of this script is to train the AI.
     private void Update()
     {
         if (policy == null)
         {
-            //thread1.Join();
-            thread2 = new Thread(new ThreadStart(InitializePolicy));
-            thread2.Start();
+            thread1 = new Thread(new ThreadStart(InitializePolicy));
+            thread1.Start();
         }
 
-        if (Input.GetKeyDown(KeyCode.T))
+        if (policy != null)
         {
-            StartTrainingRun();
+            if (Input.GetKeyDown(KeyCode.T))
+            {
+                if (!isTraining)
+                {
+                    StartTrainingRun();
+                }
+                else
+                {
+                    EndTrainingRun();
+                }
+            }
+        }
+
+        if (Input.GetKeyDown(KeyCode.P)) // play
+        {
+            sendCommands = !sendCommands;
+            OnCommandPrompt();
         }
     }
 
@@ -154,7 +177,6 @@ public class QLearning : MonoBehaviour
 
     void BeginEpisode()
     {
-        // randomize starting state or no? for now let's not
         gameController.StartGame();
         roundCountThisEpisode = 0;
     }
@@ -175,63 +197,25 @@ public class QLearning : MonoBehaviour
         }
     }
 
+    //Publish the training results!
     void EndTrainingRun()
     {
-        // write to file...
-        //var path = "Assets/Resources/policy.csv";
-        //SavePolicy(path);
         Debug.Log("Finished training run");
-
+        isTraining = false;
         var path = "Assets/Resources/policy.csv";
         PolicyIO.Serialize(policy, path);
+        //List<Tuple<CommandListAbstract, float>>[] testPolicy = null;
+        //PolicyIO.Deserialize(testPolicy, path);
     }
 
-
-    /// <summary>
-    /// load policy from file
-    /// </summary>
-    void LoadPolicy(string filePath)
-    {
-        // TODO
-    }
-
-    void SavePolicy(string filePath)
-    {
-        //using (var writer = new StreamWriter(filePath))
-        //{
-        //  writer.WriteLine("Action, Acceleration Multiplier, Delta Altitude, Delta Speed, Heading Change, Value");
-        //  var actionString = "";
-        //  for (int state = 0; state < 5; state++)
-        //  {
-        //
-        //    var actions = policy[state];
-        //    for (int i = 0; i < actions.Count; i++)
-        //    {
-        //        actionString = state.ToString() + ",";
-        //        for (int j = 0; j < actions[i].Item1.Count; j++)
-        //        {
-        //          actionString += actions[i].Item1[j].accelerationMultiplier.ToString() + "," +
-        //                         actions[i].Item1[j].deltaAltitude.ToString() + "," +
-        //                         actions[i].Item1[j].deltaSpeed.ToString() + "," +
-        //                         actions[i].Item1[j].headingChange.ToString() + "," +
-        //                        actions[i].Item2.ToString();
-        //          writer.WriteLine(actionString);
-        //        }
-        //
-        //    }
-        //  }
-        //}
-        //
-        //AssetDatabase.ImportAsset("Assets/Resources/policy.csv");
-    }
-
+    //Similar to the policy datastructure except this stores all state information such as position and speed rather than scores for maneuvers in each state.
     void InitStateSpace()
     {
         stateSpace = new StateSpace(commandersToControl[0].unitsCommanded[0], board.size.x, board.size.y);
     }
 
     /// <summary>
-    /// must enumerate every possible action to take from every possible state, where 1 action is a set of commands given to units. FOR NOW IT ONLY COMMANDS ONE UNIT!!!!
+    /// Must enumerate every possible action to take from every possible state, where 1 action is a set of commands given to units. FOR NOW IT ONLY COMMANDS ONE UNIT!!!!
     /// </summary>
     /// <param name="c"></param>
     void InitializePolicy()
@@ -240,7 +224,7 @@ public class QLearning : MonoBehaviour
 
         Debug.Log("Creating policy...");
 
-        float initialQValue = 1.0f;
+        float initialQValue = 0.8f;
         policy = new List<Tuple<CommandListAbstract, float>>[stateSpace.states.Count];
 
         //for (int s = 0; s < stateSpace.Length; s++)
@@ -290,35 +274,53 @@ public class QLearning : MonoBehaviour
 
     public void OnCommandPrompt() // should happen when it is time to make a decision
     {
-        UnitAircraft myplane = commandersToControl[0].unitsCommanded[0];
-        gameState = stateSpace.GetStateIndex(myplane);
-
-        // if exceeded time limit... then just end it
-        if (isTraining && roundCountThisEpisode > maximumRoundsPerEpisode)
+        if (sendCommands)
         {
-            EndEpisode();
-        }
-        else
-        {
-            // for each agent...
-            // Find state
-            // Choose action
-            // Queue action
-            // Tell Game to submit actions
-            // Use resulting state-action choice
+            UnitAircraft myplane = commandersToControl[0].unitsCommanded[0];
+            gameState = stateSpace.GetStateIndex(myplane);
 
-            for (int i = 0; i < commandersToControl.Length; i++)
+            // if exceeded time limit... then just end it
+            if (isTraining && roundCountThisEpisode > maximumRoundsPerEpisode)
             {
-                SelectMove(ref commandersToControl[i], randomnessFactor, difficultyLevel);
+                EndEpisode();
+            }
+            else
+            {
+                // for each agent...
+                // Find state
+                // Choose action
+                // Queue action
+                // Tell Game to submit actions
+                // Use resulting state-action choice
+
+                for (int i = 0; i < commandersToControl.Length; i++)
+                {
+                    SelectMove(ref commandersToControl[i], randomnessFactor, difficultyLevel);
+                }
             }
         }
     }
 
+    //Update the policy if it was improved.
     public void OnEndPhase()
     {
         // update state...
-        UnitAircraft myplane = commandersToControl[0].unitsCommanded[0];
+        UnitAircraft myplane = commandersToControl[0].unitsOwned[0];
         gameState = stateSpace.GetStateIndex(myplane);
+
+
+        if (rewardFunc.Invoke(gameState) == 1.0f)
+        {
+            Destroy(Instantiate(successParticles, myplane.hexPos.getPosition(), Quaternion.identity), 0.5f);
+            Debug.Log("Reached goal state!");
+
+            if (!isTraining)
+            {
+                sendCommands = false;
+            }
+        }
+
+
 
         if (isTraining)
         {
@@ -336,16 +338,22 @@ public class QLearning : MonoBehaviour
         }
     }
 
+
+    // from the textbook: AI For Games by Ian Millington
+    //start state, the action taken, the reinforcement value, and the resultingstate—arecalledtheexperiencetuple,oftenwrittenas< s,a,r,s′ >.
+    //Q(s,a) = (1−α)Q(s,a) + α(r + γmax(Q(s′,a′)))
+    //s, a are given by current state
+    //s', a' are given by the following state
     void UpdateValueEstimatesInPolicy(int lastState, int lastActionIndex, int resultingState, float discountFactor, float learningRate) // to be called after the result of a choice is known
     {
-        Debug.Log("state " + lastActionIndex + "& action " + lastActionIndex + " led to state " + resultingState);
+        //Debug.Log("state " + lastActionIndex + "& action " + lastActionIndex + " led to state " + resultingState);
 
 
         var pastActionQPair = policy[lastState][lastActionIndex];
         float oldQ = pastActionQPair.Item2;
 
         // get reward of the initial state
-        float reward = rewardFunc.Invoke(lastState);
+        float reward = rewardFunc.Invoke(resultingState);
 
         lastReward = reward; // just for visibility
 
@@ -363,39 +371,7 @@ public class QLearning : MonoBehaviour
         policy[lastState][lastActionIndex] = newActionQPair;
 
         // Debug.Log("state " + lastActionIndex + "& action " + lastActionIndex + "(value: " + newQValue + ") led to state " + resultingState);
-        Debug.Log(newActionQPair.Item1[0].ToString() + " at state " + lastState + "rated: " + newQValue);
-
-        // from the textbook: AI For Games by Ian Millington
-        //start state, the action taken, the reinforcement value, and the resultingstate—arecalledtheexperiencetuple,oftenwrittenas< s,a,r,s′ >.
-        //Q(s,a) = (1−α)Q(s,a) + α(r + γmax(Q(s′,a′)))
-        //s, a are given by current state
-        //s', a' are given by the following state
-
-
-        //TODO...
-        // add state transition from last state to stateTransitionProbabilities count
-
-        //Vector-Matrix multiplication
-        //R = (I - gamma * P)^-1
-        //newValueVector = (IdentityMatrix - (discountFactor * stateTransitionProbabilities)).Inverse() * rewardVector
-        // + rewardVector.average();
-
-        //float newValueEstimate = reward;
-        //var actions = policy[gameStatePrevious];
-
-        //for (int i = 0; i < actions.Count; i++)
-        //{
-        //    if (actions[i].Item1 == lastAction)
-        //    {
-        //        // update value of that action based on a blend between old and new value
-        //        // policy[lastState][lastAction].qValue = lerp(lastQ, qVal, learningRate)
-        //        Tuple<CommandListAbstract, float> newEntry;
-        //        float value = Mathf.Lerp(actions[i].Item2, newValueEstimate, learningRate);
-        //        newEntry = new Tuple<CommandListAbstract, float>(lastAction, value);
-        //        actions[i] = newEntry;
-        //        break;
-        //    }
-        //}
+        //Debug.Log(newActionQPair.Item1[0].ToString() + " at state " + lastState + "rated: " + newQValue);
     }
 
     /// <summary>
@@ -406,8 +382,8 @@ public class QLearning : MonoBehaviour
         policy[state].Sort(
             delegate (Tuple<CommandListAbstract, float> a1, Tuple<CommandListAbstract, float> a2)
             {
-                if (a1.Item2 < a2.Item2) return -1;
-                else if (a1.Item2 > a2.Item2) return 1;
+                if (a1.Item2 > a2.Item2) return -1;
+                else if (a1.Item2 < a2.Item2) return 1;
                 else return 0;
             }
             );
@@ -425,7 +401,20 @@ public class QLearning : MonoBehaviour
         var aircraft = stateSpace.GetAircraftAtState(state);
         HexPosition target = new HexPosition(targetPosition.x, targetPosition.y);
         int distanceToTarget = target.dist(aircraft.hexPos);
-        return maxReward / ((distanceToTarget) + 1); // return 1 when distance 0, 0.5 when distance 2, 0.33 at 3 etc.
+
+        if (aircraft.hitPoints == 0)
+        {
+            return -1;
+        }
+
+        if (distanceToTarget == 0 && aircraft.heading == targetHeading)
+        {
+            return maxReward;
+        }
+        else
+        {
+            return 0;
+        }
     }
 
     /// <summary>
@@ -436,28 +425,6 @@ public class QLearning : MonoBehaviour
     /// <param name="difficultyLevel"></param> difficulty from 0 to 1, 1 meaning always choose the best move. 0 meaning always choose the worst move
     void SelectMove(ref Commander commander, float randomness, float difficultyLevel)
     {
-        // potential improvent: weight by value, high value = less random
-        //// thresholds e.g.
-        //// 1.0 most likely
-        //// 0.8 less likely
-        //// 0.2 least likely
-        //float[] thresholds = new float[potentialActions.Count];
-        //
-        //float runningTotal = 0;
-        //// add up all the values
-        //for (int i = 1; i < potentialActions.Count; i++)
-        //{
-        //    // convert from range [-1,1] to [0,1]
-        //    float normalizedVal = (potentialActions[i].Item2 + 1.0f) * 0.5f;
-        //    runningTotal += val;
-        //
-        //    thresholds[i] = (1.0f - normalizedVal)
-        //}
-        //
-        //thresholds[0] = 0.0f;
-
-        // get potential actions
-
         if (policy == null)
         {
             Debug.Log("No Policy!");
@@ -478,9 +445,10 @@ public class QLearning : MonoBehaviour
             Debug.Log("Policy does not have any actions for state: " + gameState);
         }
         float randomFloat = UnityEngine.Random.Range(0.0f, 1.0f);
-        if (randomFloat < randomness)
+        if (randomFloat <= randomness)
         {
             // choose a random available action
+            Debug.Log("random action");
             chosenActionIndex = UnityEngine.Random.Range(0, potentialActions.Count);
         }
         else
@@ -495,10 +463,11 @@ public class QLearning : MonoBehaviour
 
         Debug.Log("Commanded " + commander.unitsCommanded[0].callsign + "To do Maneuver: " + actionToTake[0].ToString());
 
+        lastActionIndex = chosenActionIndex;
+        lastState = gameState;
+
         if (isTraining)
         {
-            lastActionIndex = chosenActionIndex;
-            lastState = gameState;
             roundCountThisEpisode++;
         }
 
@@ -556,5 +525,24 @@ public class QLearning : MonoBehaviour
         }
         return concreteCommands;
     }
+
+    public void OnTrainingButton_Click()
+    {
+      if (!isTraining)
+      {
+          StartTrainingRun();
+      }
+      else
+      {
+          EndTrainingRun();
+      }
+    }
+
+    public void OnPlayButton_Click()
+    {
+      sendCommands = !sendCommands;
+      OnCommandPrompt();
+    }
+
 
 }
